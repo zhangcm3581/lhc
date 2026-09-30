@@ -3,12 +3,12 @@
 # 先在本地运行 deploy/deploy.sh 把文件传上来，再执行：
 #   sudo bash /opt/lhc/deploy/setup-server.sh              不开微信推送
 #   sudo bash /opt/lhc/deploy/setup-server.sh 你的SendKey   开启微信推送（Server酱）
-# 端口默认 8090，要换端口：sudo LHC_PORT=8091 bash /opt/lhc/deploy/setup-server.sh
+# 端口默认 8091，要换端口：sudo LHC_PORT=8092 bash /opt/lhc/deploy/setup-server.sh
 # 可以重复运行（比如要改 SendKey），不会产生重复配置。
 set -euo pipefail
 
 APP=/opt/lhc
-PORT="${LHC_PORT:-8090}"
+PORT="${LHC_PORT:-8091}"
 PUSH_KEY="${1:-}"
 RUN_USER="${SUDO_USER:-root}" # 定时抓取以登录用户身份运行，文件归属一致
 SITE=/etc/nginx/sites-available/lhc
@@ -36,21 +36,25 @@ fi
 echo "完成"
 
 step "2/7 检查能否访问数据源"
-code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -A 'Mozilla/5.0' \
-  https://www.55128.cn/kjh/history_newam6hc.aspx || true)
-if [[ $code == 200 ]]; then
-  echo "正常"
+UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128 Safari/537.36'
+probe() { curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -A "$UA" "$1/kjh/history_newam6hc.aspx" 2>/dev/null || true; }
+www=$(probe https://www.55128.cn)
+mob=$(probe https://m.55128.cn)
+if [[ $www == 200 ]]; then
+  echo "正常（电脑版）"
+elif [[ $mob == 200 ]]; then
+  echo "电脑版返回 ${www:-失败}（这台服务器的 IP 被网站屏蔽），手机版正常，抓取时会自动改用手机版"
 else
-  echo "警告：访问数据源返回 ${code:-失败}，这台服务器可能访问不了，每天的自动抓取会失败"
+  echo "警告：电脑版返回 ${www:-失败}、手机版返回 ${mob:-失败}，这台服务器访问不了数据源，每天的自动抓取会失败"
 fi
 
 step "3/7 检查端口 $PORT 是否空闲"
 # 其他站点配置里已经写了这个端口，或者有别的程序在用，都换一个端口
 # sites-enabled 里一般是链接文件，要用 -R 才会跟进去检查
 others=$(grep -RlE "listen[[:space:]]+([^;]*:)?$PORT([[:space:];]|$)" /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | grep -v "/lhc" || true)
-[[ -z $others ]] || fail "端口 $PORT 已被这些 nginx 配置使用：$others。请换端口，例如：sudo LHC_PORT=8091 bash $0 ${PUSH_KEY}"
+[[ -z $others ]] || fail "端口 $PORT 已被这些 nginx 配置使用：$others。请换端口，例如：sudo LHC_PORT=8092 bash $0 ${PUSH_KEY}"
 if [[ ! -e $LINK ]] && command -v ss >/dev/null && ss -ltn "( sport = :$PORT )" | grep -q LISTEN; then
-  fail "端口 $PORT 已被其他程序占用。请换端口，例如：sudo LHC_PORT=8091 bash $0 ${PUSH_KEY}"
+  fail "端口 $PORT 已被其他程序占用。请换端口，例如：sudo LHC_PORT=8092 bash $0 ${PUSH_KEY}"
 fi
 echo "可用"
 

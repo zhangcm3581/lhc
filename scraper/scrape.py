@@ -7,15 +7,19 @@
   python3 scrape.py --all            # 按年抓 2020 年至今全部数据（已有的期不会被覆盖）
   python3 scrape.py --push-test      # 用现有数据发一条测试推送，检查微信能否收到
 
+数据来源：先用电脑版 www.55128.cn；电脑版拒绝访问时（部分云服务器 IP 会被它的 CDN 屏蔽，返回 403）
+自动改用手机版 m.55128.cn。手机版没有开奖日期，按期号推算（期号就是当年第几天，2022 年以来全部符合）。
+
 环境变量：
-  LHC_BASE_URL   目标站地址（默认 https://www.55128.cn）
+  LHC_BASE_URL   电脑版地址（默认 https://www.55128.cn）
+  LHC_MOBILE_URL 手机版地址（默认 https://m.55128.cn）
   LHC_PUSH_KEY   Server酱 SendKey，配置后 --wait 模式抓到新一期或抓取失败时推送到微信
   LHC_ALERT_TM   特码连续未出达到多少期时在推送里提醒（默认 30）
   LHC_ALERT_PM   平码连续未出达到多少期时在推送里提醒（默认 6）
 
-生肖：列表页只有号码。生肖按"本命生肖"推算（01、13、25、37、49 是本命，春节当天切换），
-新抓到的期再和详情页标注的生肖交叉核对——详情页偶有错误（如 2023 第022期 7 个号全标成"鼠"），
-所以详情页生肖前后矛盾时以推算为准。
+生肖：按"本命生肖"推算（01、13、25、37、49 是本命，春节当天切换），已与全部历史数据逐期核对一致。
+网站标注的生肖只用来核对新抓到的期，不一致时保留推算结果并在推送里提醒——网站标注会出错：
+电脑版详情页 2023 第022期 7 个号全标成"鼠"；手机版对往年号码一律按今年的对应关系标注，往年全部标错。
 """
 import argparse
 import gzip
@@ -25,12 +29,14 @@ import re
 import sys
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import date as Date, datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_URL = os.environ.get("LHC_BASE_URL", "https://www.55128.cn")
-LIST_PATH = "/kjh/history_newam6hc.aspx"  # 不带参数是最近 30 期，?year=2025 是整年
+MOBILE_URL = os.environ.get("LHC_MOBILE_URL", "https://m.55128.cn")
+LIST_PATH = "/kjh/history_newam6hc.aspx"  # 不带参数是最近几十期，?year=2025 是整年（电脑版、手机版相同）
 DETAIL_PATH = "/kjh/newam6hc-kjjg-{qi}.htm"  # 单期详情，标有生肖
 FIRST_YEAR = 2020
 ZODIACS = "鼠牛虎兔龙蛇马羊猴鸡狗猪"
@@ -41,7 +47,7 @@ PUSH_KEY = os.environ.get("LHC_PUSH_KEY", "")
 ALERT_TM = int(os.environ.get("LHC_ALERT_TM", "30"))
 ALERT_PM = int(os.environ.get("LHC_ALERT_PM", "6"))
 
-# 春节 = 本命生肖切换日。2021–2026 已用开奖数据核对过；之后每期还会和详情页交叉核对。
+# 春节 = 本命生肖切换日。2021–2026 已用开奖数据核对过；之后每期还会和网站标注交叉核对。
 SPRING_FESTIVAL = {
     2020: "2020-01-25", 2021: "2021-02-12", 2022: "2022-02-01", 2023: "2023-01-22",
     2024: "2024-02-10", 2025: "2025-01-29", 2026: "2026-02-17", 2027: "2027-02-06",
@@ -60,8 +66,12 @@ DETAIL_RE = re.compile(
 )
 DETAIL_BALL_RE = re.compile(r'<span class="ball-list[^"]*"[^>]*>(\d+)</span>')
 DETAIL_ZODIAC_RE = re.compile(r'<span class="ball-list-new">(\S)</span>')
+MOBILE_ITEM_RE = re.compile(r'<strong>(\d{7})</strong>\s*期(.*?)(?=<div class="item">|</section>)', re.S)
+MOBILE_BALL_RE = re.compile(r'<span class="kj-\w+">\s*(\d+)\s*</span>')
+MOBILE_ZODIAC_RE = re.compile(r'<p>(\S)/\S</p>')
 
 warnings = []  # 需要人工留意的情况，会附在推送里
+desktop_blocked = False  # 电脑版返回过 403 后，本次运行不再请求它
 
 
 def log(msg):
@@ -86,7 +96,8 @@ def fetch(url, retries=3):
                     body = gzip.decompress(body)
                 return body.decode("utf-8")
         except Exception as e:
-            if attempt == retries:
+            # 4xx 是网站拒绝或页面不存在，重试也没用
+            if attempt == retries or (isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500):
                 raise
             log(f"请求失败（第 {attempt} 次）：{e}，10 秒后重试")
             time.sleep(10)
@@ -118,15 +129,24 @@ def zodiac_of(num, benming):
     return ZODIACS[(ZODIACS.index(benming) - (num - 1)) % 12]
 
 
+def date_of_issue(year, issue):
+    """期号就是当年第几天（2022 年以来全部符合）。手机版没有开奖日期，用它推算。"""
+    return (Date(year, 1, 1) + timedelta(days=issue - 1)).isoformat()
+
+
+def check_nums(q, nums):
+    # 逐期校验，页面结构一变就立刻报错，而不是悄悄写入坏数据
+    if len(nums) != 7 or len(set(nums)) != 7 or not all(1 <= n <= 49 for n in nums):
+        raise ValueError(f"第{q}期号码异常：{nums}")
+
+
 def parse_list(html):
     draws = {}
     for date, q, box in ROW_RE.findall(html):
         nums = [int(n) for n in LIST_BALL_RE.findall(box)]
-        # 逐期校验，页面结构一变就立刻报错，而不是悄悄写入坏数据
         if q[:4] != date[:4]:
             raise ValueError(f"第{q}期的日期 {date} 年份不符")
-        if len(nums) != 7 or len(set(nums)) != 7 or not all(1 <= n <= 49 for n in nums):
-            raise ValueError(f"第{q}期号码异常：{nums}")
+        check_nums(q, nums)
         draw = {"date": date, "issue": int(q[4:]), "nums": nums}
         seen = draws.get(key(draw))
         if seen and seen["nums"] != nums:
@@ -137,16 +157,60 @@ def parse_list(html):
     return list(draws.values())
 
 
+def parse_mobile(html):
+    """手机版列表：有期号、号码和标注的生肖，没有日期。"""
+    draws = {}
+    for q, box in MOBILE_ITEM_RE.findall(html):
+        nums = [int(n) for n in MOBILE_BALL_RE.findall(box)]
+        check_nums(q, nums)
+        draw = {"date": date_of_issue(int(q[:4]), int(q[4:])), "issue": int(q[4:]), "nums": nums}
+        labels = "".join(MOBILE_ZODIAC_RE.findall(box))
+        if len(labels) == 7:
+            draw["labels"] = labels  # 网站标注的生肖，只用来核对，不写入数据
+        draws.setdefault(key(draw), draw)
+    if not draws:
+        raise ValueError("手机版列表页没有解析到任何开奖记录，页面结构可能变了")
+    return list(draws.values())
+
+
+def get_list(year=None):
+    """开奖列表：先用电脑版；电脑版拒绝访问（服务器 IP 被网站的 CDN 屏蔽）时改用手机版。"""
+    global desktop_blocked
+    query = f"?year={year}" if year else ""
+    if not desktop_blocked:
+        try:
+            return parse_list(fetch(BASE_URL + LIST_PATH + query))
+        except urllib.error.HTTPError as e:
+            if e.code != 403:
+                raise
+            desktop_blocked = True
+            log("电脑版拒绝访问（403），改用手机版")
+    return parse_mobile(fetch(MOBILE_URL + LIST_PATH + query))
+
+
 def scrape_year(year):
-    rows = parse_list(fetch(f"{BASE_URL}{LIST_PATH}?year={year}"))
+    rows = get_list(year)
     log(f"{year} 年：{len(rows)} 期")
     return rows
 
 
-def detail_benming(draw):
-    """详情页标注的生肖所对应的本命；详情页打不开、号码对不上或生肖前后矛盾时返回 None。"""
+def labels_benming(draw, zs, source):
+    """网站标注的生肖所对应的本命；生肖前后矛盾时返回 None。"""
+    found = {benming_of(n, z) for n, z in zip(draw["nums"], zs)}
+    if len(zs) != 7 or len(found) != 1:
+        log(f"第{qi(draw)}期{source}标注的生肖前后矛盾（{''.join(zs)}），以推算为准")
+        return None
+    return found.pop()
+
+
+def site_benming(draw):
+    """新抓到的期，从网站标注的生肖反推本命，用来核对。拿不到时返回 None。"""
+    if "labels" in draw:
+        return labels_benming(draw, draw["labels"], "手机版")
+    if desktop_blocked:
+        return None
     try:
-        m = DETAIL_RE.search(fetch(BASE_URL + DETAIL_PATH.format(qi=qi(draw))))
+        m = DETAIL_RE.search(fetch(BASE_URL + DETAIL_PATH.format(qi=qi(draw)), retries=1))
     except Exception as e:
         log(f"第{qi(draw)}期详情页打不开：{e}")
         return None
@@ -154,25 +218,20 @@ def detail_benming(draw):
         log(f"第{qi(draw)}期详情页没有解析到号码，页面结构可能变了")
         return None
     nums = [int(n) for n in DETAIL_BALL_RE.findall(m.group(1))]
-    zs = DETAIL_ZODIAC_RE.findall(m.group(2))
-    if nums != draw["nums"] or len(zs) != 7:
-        log(f"第{qi(draw)}期详情页的号码 {nums} / 生肖 {zs} 与列表页不符，改用推算")
+    if nums != draw["nums"]:
+        log(f"第{qi(draw)}期详情页的号码 {nums} 与列表页不符")
         return None
-    found = {benming_of(n, z) for n, z in zip(nums, zs)}
-    if len(found) != 1:
-        log(f"第{qi(draw)}期详情页的生肖前后矛盾（{''.join(zs)}），改用推算")
-        return None
-    return found.pop()
+    return labels_benming(draw, DETAIL_ZODIAC_RE.findall(m.group(2)), "详情页")
 
 
-def with_zodiacs(draw, check_detail):
+def with_zodiacs(draw, check_site):
     bm = benming_by_date(draw["date"])
-    if check_detail:
-        bm_detail = detail_benming(draw)
-        if bm_detail and bm_detail != bm:
-            warn(f"第{qi(draw)}期详情页的本命是「{bm_detail}」，按春节推算是「{bm}」，已按详情页记录，请核对春节日期")
-            bm = bm_detail
-    return {**draw, "zodiacs": "".join(zodiac_of(n, bm) for n in draw["nums"])}
+    if check_site:
+        bm_site = site_benming(draw)
+        if bm_site and bm_site != bm:
+            warn(f"第{qi(draw)}期网站标注的本命是「{bm_site}」，按春节推算是「{bm}」，已按推算记录，请人工核对")
+    clean = {k: v for k, v in draw.items() if k != "labels"}  # 网站标注只用来核对，不写入数据
+    return {**clean, "zodiacs": "".join(zodiac_of(n, bm) for n in draw["nums"])}
 
 
 def load(path):
@@ -190,10 +249,10 @@ def fetch_rows(existing, full):
     this_year = datetime.now(BEIJING).year
     if full or not existing:
         return [r for y in range(FIRST_YEAR, this_year + 1) for r in scrape_year(y)]
-    rows = parse_list(fetch(BASE_URL + LIST_PATH))
+    rows = get_list()
     latest = key(existing[-1])
     if min(key(r) for r in rows) > latest:
-        log("最近 30 期接不上已有数据，按年补抓")
+        log("最近几十期接不上已有数据，按年补抓")
         rows += [r for y in range(latest[0], this_year + 1) for r in scrape_year(y)]
     return rows
 
@@ -209,8 +268,8 @@ def run_once(out, full=False):
             fresh.append(r)
         elif have["nums"] != r["nums"]:
             log(f"第{qi(r)}期：已有号码 {have['nums']}，网站现在是 {r['nums']}，保留已有数据")
-    # 只有零星几期新数据时才逐期打开详情页核对，避免大量请求
-    added = [with_zodiacs(r, check_detail=len(fresh) <= 5) for r in fresh]
+    # 只有零星几期新数据时才和网站标注核对（电脑版要逐期打开详情页，避免大量请求）
+    added = [with_zodiacs(r, check_site=len(fresh) <= 5) for r in fresh]
     if added:
         draws = sorted(draws + added, key=key)
         save(out, draws)

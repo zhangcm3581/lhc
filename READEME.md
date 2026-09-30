@@ -71,7 +71,7 @@ npm test                          # 统计逻辑测试
 ## 部署到 Ubuntu 服务器（IP + 端口访问）
 
 需要：本地电脑装有 Node.js、Python 3、rsync；服务器是 Ubuntu，登录用户有 sudo 权限（腾讯云的 ubuntu 用户默认就有）。
-网站用 **8090** 端口，单独一个 nginx 站点（`/etc/nginx/sites-available/lhc`），不会改动服务器上已有的其他站点。
+网站用 **8091** 端口，单独一个 nginx 站点（`/etc/nginx/sites-available/lhc`），不会改动服务器上已有的其他站点。
 
 **首次部署**
 
@@ -84,10 +84,10 @@ npm test                          # 统计逻辑测试
    ssh -t ubuntu@服务器IP 'sudo bash /opt/lhc/deploy/setup-server.sh'            # 不开微信推送
    ssh -t ubuntu@服务器IP 'sudo bash /opt/lhc/deploy/setup-server.sh 你的SendKey' # 开启微信推送
    ```
-   它会：检查依赖（已装的不重装）→ 检查能否访问数据源 → 检查 8090 端口没被占用 → 新增 nginx 站点（`nginx -t` 不通过会自动撤回，不影响现有网站）→ 抓一次最新数据 → 设置定时任务 → ufw 开着就放行端口。
-   端口被占用时会提示，可以换端口：`sudo LHC_PORT=8091 bash /opt/lhc/deploy/setup-server.sh`。
-3. 在云服务商控制台的安全组里放行 **TCP 8090** 端口。
-4. 浏览器打开 `http://服务器公网IP:8090`。
+   它会：检查依赖（已装的不重装）→ 检查能否访问数据源 → 检查 8091 端口没被占用 → 新增 nginx 站点（`nginx -t` 不通过会自动撤回，不影响现有网站）→ 抓一次最新数据 → 设置定时任务 → ufw 开着就放行端口。
+   端口被占用时会提示，可以换端口：`sudo LHC_PORT=8092 bash /opt/lhc/deploy/setup-server.sh`。
+3. 在云服务商控制台的安全组里放行 **TCP 8091** 端口。
+4. 浏览器打开 `http://服务器公网IP:8091`。
 
 **以后更新网页或抓取脚本**：本地运行 `deploy/deploy.sh ubuntu@服务器IP`（不带 `--with-data`，服务器上每天抓的数据不会被覆盖）。
 
@@ -104,6 +104,12 @@ npm test                          # 统计逻辑测试
 3. 测试：`LHC_PUSH_KEY=你的SendKey python3 /opt/lhc/scraper/scrape.py --push-test`，微信收到一条"[测试]"消息即成功。
 
 提醒线可在定时任务里加环境变量调整：`LHC_ALERT_TM`（特码，默认 30 期）、`LHC_ALERT_PM`（平码，默认 6 期）。
+
+## 数据来源与服务器访问
+
+部分云服务器（如腾讯云）的 IP 会被 55128 电脑版的 CDN 屏蔽（返回 403，响应头 `Ks-Deny-Reason: client-ip-no-match`），
+抓取脚本会自动改用手机版 `m.55128.cn`。手机版没有开奖日期，按期号推算（期号就是当年第几天，2022 年以来全部符合）；
+手机版对往年号码标注的生肖是按今年的对应关系算的（往年全部标错），所以生肖一律按规则推算，网站标注只用来核对新一期。
 
 ## 数据的已知问题
 
