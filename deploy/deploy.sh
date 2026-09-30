@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # 在本地执行：测试、打包前端，连同抓取脚本和部署文件上传到服务器的 /opt/lhc。
-# 用法：deploy/deploy.sh root@服务器IP              更新网页和抓取脚本
-#       deploy/deploy.sh root@服务器IP --with-data  首次部署：连本地已有的历史数据一起上传
+# 用法：deploy/deploy.sh ubuntu@服务器IP              更新网页和抓取脚本
+#       deploy/deploy.sh ubuntu@服务器IP --with-data  首次部署：连本地已有的历史数据一起上传
+# 登录用户需要有 sudo 权限（腾讯云等的 ubuntu 用户默认就有）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-host="${1:?用法：deploy/deploy.sh root@服务器IP [--with-data]}"
+host="${1:?用法：deploy/deploy.sh ubuntu@服务器IP [--with-data]}"
 
 python3 -m unittest scraper/test_scrape.py
 (cd web && npm ci && npm test && npm run build)
 
-ssh "$host" 'mkdir -p /opt/lhc/web /opt/lhc/scraper /opt/lhc/data /opt/lhc/logs /opt/lhc/deploy'
+# /opt 需要 sudo 才能写；建好目录后交给登录用户，之后上传不再需要 sudo
+ssh -t "$host" 'sudo mkdir -p /opt/lhc && sudo chown "$(id -un)": /opt/lhc && mkdir -p /opt/lhc/web /opt/lhc/scraper /opt/lhc/data /opt/lhc/logs /opt/lhc/deploy'
 rsync -az --delete web/dist/ "$host:/opt/lhc/web/"
 rsync -az scraper/scrape.py "$host:/opt/lhc/scraper/"
 rsync -az deploy/nginx.conf deploy/setup-server.sh "$host:/opt/lhc/deploy/"
@@ -20,4 +22,4 @@ fi
 
 echo
 echo "已上传到 $host:/opt/lhc"
-echo "首次部署还要在服务器上运行一次：ssh $host 'bash /opt/lhc/deploy/setup-server.sh'"
+echo "首次部署还要在服务器上运行一次：ssh -t $host 'sudo bash /opt/lhc/deploy/setup-server.sh'"

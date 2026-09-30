@@ -70,25 +70,28 @@ npm test                          # 统计逻辑测试
 
 ## 部署到 Ubuntu 服务器（IP + 端口访问）
 
-需要：本地电脑装有 Node.js、Python 3、rsync；服务器是 Ubuntu，能用 root 通过 ssh 登录。
+需要：本地电脑装有 Node.js、Python 3、rsync；服务器是 Ubuntu，登录用户有 sudo 权限（腾讯云的 ubuntu 用户默认就有）。
+网站用 **8090** 端口，单独一个 nginx 站点（`/etc/nginx/sites-available/lhc`），不会改动服务器上已有的其他站点。
 
 **首次部署**
 
 1. 本地上传（会先跑测试、打包网页，再把网页、抓取脚本、部署文件和历史数据传到服务器 `/opt/lhc`）：
    ```bash
-   deploy/deploy.sh root@服务器IP --with-data
+   deploy/deploy.sh ubuntu@服务器IP --with-data
    ```
-2. 服务器上运行一次初始化（安装 nginx 和 cron、配置 8080 端口网站、检查能否访问数据源、抓一次最新数据、设置定时任务、ufw 开着就放行端口）：
+2. 服务器上运行一次初始化：
    ```bash
-   ssh root@服务器IP 'bash /opt/lhc/deploy/setup-server.sh'            # 不开微信推送
-   ssh root@服务器IP 'bash /opt/lhc/deploy/setup-server.sh 你的SendKey' # 开启微信推送
+   ssh -t ubuntu@服务器IP 'sudo bash /opt/lhc/deploy/setup-server.sh'            # 不开微信推送
+   ssh -t ubuntu@服务器IP 'sudo bash /opt/lhc/deploy/setup-server.sh 你的SendKey' # 开启微信推送
    ```
-3. 在云服务商控制台的安全组里放行 **TCP 8080** 端口。
-4. 浏览器打开 `http://服务器公网IP:8080`。
+   它会：检查依赖（已装的不重装）→ 检查能否访问数据源 → 检查 8090 端口没被占用 → 新增 nginx 站点（`nginx -t` 不通过会自动撤回，不影响现有网站）→ 抓一次最新数据 → 设置定时任务 → ufw 开着就放行端口。
+   端口被占用时会提示，可以换端口：`sudo LHC_PORT=8091 bash /opt/lhc/deploy/setup-server.sh`。
+3. 在云服务商控制台的安全组里放行 **TCP 8090** 端口。
+4. 浏览器打开 `http://服务器公网IP:8090`。
 
-**以后更新网页或抓取脚本**：本地运行 `deploy/deploy.sh root@服务器IP`（不带 `--with-data`，服务器上每天抓的数据不会被覆盖）。
+**以后更新网页或抓取脚本**：本地运行 `deploy/deploy.sh ubuntu@服务器IP`（不带 `--with-data`，服务器上每天抓的数据不会被覆盖）。
 
-**定时抓取**：每天北京时间 21:34 开奖时开始抓，没抓到就每分钟再查一次，抓到当天这一期或到 22:40 为止。初始化脚本会按服务器时区自动换算（东八区就是 21:34）。日志在 `/opt/lhc/logs/scrape.log`。
+**定时抓取**：每天北京时间 21:34 开奖时开始抓，没抓到就每分钟再查一次，抓到当天这一期或到 22:40 为止。以登录用户（ubuntu）身份运行，初始化脚本会按服务器时区自动换算（东八区就是 21:34）。查看：`crontab -l`；日志：`/opt/lhc/logs/scrape.log`。
 
 服务器上的目录：`/opt/lhc/web`（网页）、`/opt/lhc/scraper`、`/opt/lhc/data/draws.json`（抓取脚本直接改写，网页刷新即可看到）、`/opt/lhc/deploy`、`/opt/lhc/logs`。
 
@@ -97,7 +100,7 @@ npm test                          # 统计逻辑测试
 每天抓到新一期后推送一条到微信：开奖号码和生肖、特码最久未出 Top5、本命生肖未出情况，以及达到提醒线的生肖。到截止时间还没抓到（比如目标站换了域名）也会推送提醒。
 
 1. 用微信扫码登录 https://sct.ftqq.com ，按提示关注它的服务号，在 SendKey 页面复制 SendKey（免费版每天 5 条，本项目每天 1~2 条）。
-2. 服务器上重新运行初始化并带上 SendKey：`bash /opt/lhc/deploy/setup-server.sh 你的SendKey`（可重复运行，只会更新定时任务）。
+2. 服务器上重新运行初始化并带上 SendKey：`sudo bash /opt/lhc/deploy/setup-server.sh 你的SendKey`（可重复运行，只会更新定时任务）。
 3. 测试：`LHC_PUSH_KEY=你的SendKey python3 /opt/lhc/scraper/scrape.py --push-test`，微信收到一条"[测试]"消息即成功。
 
 提醒线可在定时任务里加环境变量调整：`LHC_ALERT_TM`（特码，默认 30 期）、`LHC_ALERT_PM`（平码，默认 6 期）。
