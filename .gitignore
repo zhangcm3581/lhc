@@ -1,0 +1,4 @@
+node_modules/
+web/dist/
+*.tmp
+.DS_Store
