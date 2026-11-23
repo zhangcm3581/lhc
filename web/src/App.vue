@@ -11,6 +11,7 @@ import Benming from './views/Benming.vue'
 import Relation from './views/Relation.vue'
 import Structure from './views/Structure.vue'
 import Backtest from './views/Backtest.vue'
+import Materials from './views/Materials.vue'
 
 const TABS = [
   { key: 'dash', label: '看板', comp: Dashboard },
@@ -20,6 +21,7 @@ const TABS = [
   { key: 'rel', label: '连出关联', comp: Relation },
   { key: 'struct', label: '单期结构', comp: Structure },
   { key: 'bt', label: '规则回测', comp: Backtest },
+  { key: 'materials', label: '六肖十码', comp: Materials },
 ]
 
 const draws = ref(null)
@@ -63,9 +65,10 @@ onMounted(async () => {
 <template>
   <header class="app-head">
     <div class="container">
-      <h1>生肖<span class="scope">【{{ scope }}】</span>走势分析</h1>
-      <div v-if="latest" class="meta">最新 第{{ latest.issue }}期 · {{ latest.date }} · 共 {{ draws.length }} 期</div>
-      <div class="filters">
+      <h1 v-if="tab === 'materials'">六肖十码<span class="scope"> · 资料存档</span></h1>
+      <h1 v-else>生肖<span class="scope">【{{ scope }}】</span>走势分析</h1>
+      <div v-if="latest && tab !== 'materials'" class="meta">最新 第{{ latest.issue }}期 · {{ latest.date }} · 共 {{ draws.length }} 期</div>
+      <div v-if="tab !== 'materials'" class="filters">
         <Seg v-if="SHOW_SPECIAL" v-model="scope" :options="[{ value: '特码', label: '特码' }, { value: '平码', label: '平码' }]" block />
         <Seg
           v-model="range"
@@ -88,7 +91,8 @@ onMounted(async () => {
   </nav>
 
   <main class="container main">
-    <p v-if="error" class="card">{{ error }}</p>
+    <Materials v-if="tab === 'materials'" />
+    <p v-else-if="error" class="card">{{ error }}</p>
     <p v-else-if="!draws" class="card muted">加载中…</p>
     <component :is="current.comp" v-else :draws="draws" :scope="scope" :range="range" :start="start" />
   </main>

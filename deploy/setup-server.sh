@@ -77,6 +77,10 @@ if [[ ! -s $DATA/draws.json ]]; then
     echo "用仓库里的数据作为初始数据"
   fi
 fi
+if [[ ! -s $DATA/materials.json && -s $APP/data/materials.json ]]; then
+  cp $APP/data/materials.json $DATA/materials.json
+  echo "用仓库里的六肖十码资料作为初始存档"
+fi
 chown -R "$RUN_USER": $APP $DATA
 chmod -R a+rX $APP/web/dist $DATA # nginx 以 www-data 身份运行，需要能读取网页和数据
 chmod a+x $APP $APP/web          # 允许进入仓库目录找到 web/dist
@@ -108,12 +112,25 @@ step "6/7 抓取最新数据，设置定时任务"
 if [[ -s $DATA/draws.json ]]; then args=(); else args=(--all); fi
 sudo -u "$RUN_USER" python3 $APP/scraper/scrape.py --out $DATA/draws.json "${args[@]}" ||
   echo "抓取失败，定时任务会在开奖后重试"
+sudo -u "$RUN_USER" python3 $APP/scraper/materials.py --out $DATA/materials.json ||
+  echo "六肖十码采集失败，保留已有存档，定时任务会重试"
 # 每天北京时间 21:34 开奖时开始抓，没抓到每分钟重试，最晚到 22:40；按服务器时区换算（东八区就是 21:34）
 read -r MIN HOUR < <(date -d 'TZ="Asia/Shanghai" 21:34' '+%-M %-H')
 LINE="$MIN $HOUR * * * cd $APP && LHC_PUSH_KEY='$PUSH_KEY' /usr/bin/python3 scraper/scrape.py --wait 22:40 --out $DATA/draws.json >> $DATA/logs/scrape.log 2>&1"
-{ crontab -u "$RUN_USER" -l 2>/dev/null | grep -v 'scraper/scrape.py' || true; echo "$LINE"; } | crontab -u "$RUN_USER" -
+MATERIALS_LINE="$MIN $HOUR * * * cd $APP && /usr/bin/python3 scraper/materials.py --wait 22:40 --out $DATA/materials.json >> $DATA/logs/materials.log 2>&1"
+{
+  crontab -u "$RUN_USER" -l 2>/dev/null | grep -vE 'scraper/(scrape|materials)\.py' || true
+  echo "$LINE"
+  echo "$MATERIALS_LINE"
+  # 每个时间单独换算，兼容服务器不是东八区；采集脚本检查当天已保存则不请求网站。
+  for BJ_TIME in 10:00 12:00 13:00 21:29; do
+    read -r M H < <(date -d "TZ=\"Asia/Shanghai\" $BJ_TIME" '+%-M %-H')
+    echo "$M $H * * * cd $APP && /usr/bin/python3 scraper/materials.py --out $DATA/materials.json >> $DATA/logs/materials.log 2>&1"
+  done
+} | crontab -u "$RUN_USER" -
 systemctl enable --now cron >/dev/null 2>&1 || service cron start >/dev/null 2>&1 || true
 echo "以 $RUN_USER 身份运行；服务器时区 $(date +%Z)，每天 $(printf '%02d:%02d' "$HOUR" "$MIN") 开始；微信推送：$([[ -n $PUSH_KEY ]] && echo 已开启 || echo 未开启)"
+echo "六肖十码（北京时间）：10:00 / 12:00 / 13:00 / 21:29 按需补预测；21:34 起补开奖结果，成功即停止"
 
 step "7/7 防火墙"
 if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then
