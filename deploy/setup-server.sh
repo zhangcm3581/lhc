@@ -117,7 +117,7 @@ sudo -u "$RUN_USER" python3 $APP/scraper/materials.py --out $DATA/materials.json
 # 每天北京时间 21:34 开奖时开始抓，没抓到每分钟重试，最晚到 22:40；按服务器时区换算（东八区就是 21:34）
 read -r MIN HOUR < <(date -d 'TZ="Asia/Shanghai" 21:34' '+%-M %-H')
 LINE="$MIN $HOUR * * * cd $APP && LHC_PUSH_KEY='$PUSH_KEY' /usr/bin/python3 scraper/scrape.py --wait 22:40 --out $DATA/draws.json >> $DATA/logs/scrape.log 2>&1"
-MATERIALS_LINE="$MIN $HOUR * * * cd $APP && /usr/bin/python3 scraper/materials.py --wait 22:40 --out $DATA/materials.json >> $DATA/logs/materials.log 2>&1"
+MATERIALS_LINE="$(( (MIN + 30) % 60 )),$MIN * * * * cd $APP && /usr/bin/python3 scraper/materials.py --sync-results --out $DATA/materials.json >> $DATA/logs/materials.log 2>&1"
 {
   crontab -u "$RUN_USER" -l 2>/dev/null | grep -vE 'scraper/(scrape|materials)\.py' || true
   echo "$LINE"
@@ -130,7 +130,7 @@ MATERIALS_LINE="$MIN $HOUR * * * cd $APP && /usr/bin/python3 scraper/materials.p
 } | crontab -u "$RUN_USER" -
 systemctl enable --now cron >/dev/null 2>&1 || service cron start >/dev/null 2>&1 || true
 echo "以 $RUN_USER 身份运行；服务器时区 $(date +%Z)，每天 $(printf '%02d:%02d' "$HOUR" "$MIN") 开始；微信推送：$([[ -n $PUSH_KEY ]] && echo 已开启 || echo 未开启)"
-echo "六肖十码（北京时间）：10:00 / 12:00 / 13:00 / 21:29 按需补预测；21:34 起补开奖结果，成功即停止"
+echo "六肖十码（北京时间）：10:00 / 12:00 / 13:00 / 21:29 按需补预测；每半小时按需补开奖结果（跨日继续），补齐即跳过"
 
 step "7/7 防火墙"
 if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then

@@ -169,28 +169,39 @@ def complete(records, today, results=False):
     return record is not None and (not results or all(row['result'] for row in record['rows']))
 
 
+def results_complete(records, now):
+    # 午夜后继续追踪昨日；今日未到开奖时间时不追问今日的结果。
+    latest_due = now.date() if (now.hour, now.minute) >= (21, 34) else now.date() - timedelta(days=1)
+    return complete(records, latest_due, results=True) and all(
+        all(row['result'] for row in r['rows']) for r in records if r['date'] <= latest_due.isoformat()
+    )
+
+
 def run_once(out, source, results=False):
     now = datetime.now(BEIJING)
     existing = load(out)
-    if complete(existing, now.date(), results):
-        log(f'六肖十码：{now.date()} 的{"开奖结果" if results else "预测资料"}已保存，跳过请求')
+    done = results_complete(existing, now) if results else complete(existing, now.date())
+    if done:
+        log('六肖十码：到期开奖的结果已补齐，跳过请求' if results else f'六肖十码：{now.date()} 的预测资料已保存，跳过请求')
         return True
     incoming = get_materials(source, now.date())
     records, changed = merge(existing, incoming, now.isoformat(timespec='seconds'), source)
     if changed:
         save(out, records)
     log(f'六肖十码：读取 {len(incoming)} 期，新增/补结果 {changed} 期，累计保存 {len(records)} 期')
-    return complete(records, now.date(), results)
+    return results_complete(records, now) if results else complete(records, now.date())
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--out', type=Path, default=DEFAULT_OUT)
     ap.add_argument('--source', default=os.environ.get('LHC_MATERIALS_URL', SOURCE))
-    ap.add_argument('--wait', metavar='HH:MM', help='每分钟尝试补齐当天开奖结果，成功即停止，最晚到指定北京时间')
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument('--sync-results', action='store_true', help='检查所有到期开奖但结果未补齐的期数，供每半小时定时任务调用')
+    mode.add_argument('--wait', metavar='HH:MM', help='每分钟尝试补齐当天开奖结果，成功即停止，最晚到指定北京时间')
     args = ap.parse_args()
     if not args.wait:
-        run_once(args.out, args.source)
+        run_once(args.out, args.source, results=args.sync_results)
         return
     hh, mm = map(int, args.wait.split(':'))
     deadline = datetime.now(BEIJING).replace(hour=hh, minute=mm, second=0, microsecond=0)

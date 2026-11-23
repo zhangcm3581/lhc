@@ -81,6 +81,7 @@ class MaterialsTest(unittest.TestCase):
                 self.assertTrue(materials.run_once(out, 'source'))  # 12 点
                 self.assertTrue(materials.run_once(out, 'source'))  # 13 点
                 self.assertEqual(fetch.call_count, 1)
+                clock.now.return_value = datetime(2026, 11, 23, 21, 34, tzinfo=materials.BEIJING)
                 self.assertFalse(materials.run_once(out, 'source', results=True))
                 self.assertEqual(fetch.call_count, 2)  # 已有预测，仍需补结果
                 opened = deepcopy(incoming)
@@ -97,6 +98,37 @@ class MaterialsTest(unittest.TestCase):
         self.assertFalse(materials.complete(records[:-1], TODAY))
         self.assertTrue(materials.complete(records, TODAY))
         self.assertFalse(materials.complete(records, date(2026, 11, 24)))
+
+    def test_results_keep_tracking_previous_day_after_midnight(self):
+        records, _ = materials.merge([], materials.parse_materials(HTML, TODAY), 'first', 'source')
+        before = datetime(2026, 11, 23, 21, 33, tzinfo=materials.BEIJING)
+        after = datetime(2026, 11, 23, 21, 34, tzinfo=materials.BEIJING)
+        midnight = datetime(2026, 11, 24, 0, 4, tzinfo=materials.BEIJING)
+        self.assertTrue(materials.results_complete(records, before))
+        self.assertFalse(materials.results_complete(records, after))
+        self.assertFalse(materials.results_complete(records, midnight))
+        for row in records[-1]['rows']:
+            row['result'] = {'zodiac': '马', 'number': 25}
+        self.assertTrue(materials.results_complete(records, midnight))
+        # 昨日已齐，但更早的存档还有未同步结果，不能停止。
+        records[0]['rows'][0]['result'] = None
+        self.assertFalse(materials.results_complete(records, midnight))
+
+    def test_result_sync_skips_network_after_midnight_when_done(self):
+        records, _ = materials.merge([], materials.parse_materials(HTML, TODAY), 'first', 'source')
+        with tempfile.TemporaryDirectory() as tmp, patch.object(materials, 'datetime') as clock:
+            clock.now.return_value = datetime(2026, 11, 24, 0, 4, tzinfo=materials.BEIJING)
+            out = Path(tmp) / 'materials.json'
+            materials.save(out, records)
+            opened = deepcopy(materials.parse_materials(HTML, TODAY))
+            for row in opened[-1]['rows']:
+                row['result'] = {'zodiac': '马', 'number': 25}
+                row['result_text'] = '开：马25'
+            with patch.object(materials, 'get_materials', return_value=opened) as fetch:
+                self.assertTrue(materials.run_once(out, 'source', results=True))
+                self.assertTrue(materials.run_once(out, 'source', results=True))
+                self.assertEqual(fetch.call_count, 1)
+            self.assertEqual(materials.load(out)[-1]['rows'][0]['zodiacs'], list('马羊龙蛇鸡猴'))
 
     def test_poll_stops_on_success_without_sleep(self):
         with patch.object(sys, 'argv', ['materials.py', '--wait', '22:40']), \

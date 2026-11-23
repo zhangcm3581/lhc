@@ -127,7 +127,7 @@ const hit = row => row.result && (row.zodiacs.length ? row.zodiacs.includes(row.
         </tbody>
       </table>
       <div class="archive-note small muted">
-        <details><summary>采集时间说明</summary><p>北京时间 10:00、12:00、13:00 补预测，21:29 补抓；21:34 起补结果，最晚到 22:40。采集成功即停止。</p></details>
+        <details><summary>采集时间说明</summary><p>北京时间 10:00、12:00、13:00 补预测，21:29 补抓；21:34 起每半小时按需补结果，跨日继续，直到补齐。已有预测或结果不重复请求。</p></details>
         <p>预测保存于 {{ stamp(selected.captured_at) }}（北京时间）</p>
         <p v-if="selected.result_captured_at">结果同步于 {{ stamp(selected.result_captured_at) }}</p>
         <p v-if="selected.before_result">预测在原站未公布结果时保存；开奖后仅补结果，命中情况按已保存的预测计算。</p>
