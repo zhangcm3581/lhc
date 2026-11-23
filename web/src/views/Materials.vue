@@ -7,8 +7,15 @@ const loading = ref(true)
 const error = ref('')
 const year = ref(0)
 const issue = ref(0)
+const expanded = ref(false)
 const years = computed(() => [...new Set(records.value.map(r => r.year))].sort((a, b) => b - a))
 const issues = computed(() => records.value.filter(r => r.year === year.value).sort((a, b) => b.issue - a.issue))
+const selectedIndex = computed(() => issues.value.findIndex(r => r.issue === issue.value))
+const visibleIssues = computed(() => {
+  if (expanded.value) return issues.value
+  const start = Math.max(0, Math.min(selectedIndex.value - 3, issues.value.length - 8))
+  return issues.value.slice(start, start + 8)
+})
 const selected = computed(() => issues.value.find(r => r.issue === issue.value))
 const result = computed(() => selected.value?.rows[0].result)
 const stamp = value => value?.replace('T', ' ').replace(/\+08:00$/, '')
@@ -44,12 +51,22 @@ const hit = row => row.result && (row.zodiacs.length ? row.zodiacs.includes(row.
   <template v-else>
     <section class="card">
       <div class="card-head">
-        <h2 class="card-title">六肖十码 · 历史资料</h2>
+        <h2 class="card-title">历史期数 <span class="count">共 {{ issues.length }} 期</span></h2>
         <label class="year">年份 <select v-model.number="year" aria-label="资料年份"><option v-for="y in years" :key="y" :value="y">{{ y }}</option></select></label>
       </div>
-      <p class="card-help">共保存 {{ records.length }} 期 · 10 / 12 / 13 点补预测 · 21:29 补抓 · 21:34 起补结果（北京时间），采到即停</p>
-      <div class="issues" aria-label="选择期号">
-        <button v-for="r in issues" :key="r.issue" class="chip" :class="{ on: issue === r.issue }" :aria-pressed="issue === r.issue" @click="issue = r.issue">{{ r.issue }}期</button>
+      <div class="issue-nav">
+        <button class="chip" :disabled="selectedIndex >= issues.length - 1" @click="issue = issues[selectedIndex + 1].issue">‹ 上一期</button>
+        <select v-model.number="issue" aria-label="选择期号">
+          <option v-for="r in issues" :key="r.issue" :value="r.issue">第 {{ r.issue }} 期 · {{ r.date.slice(5) }}</option>
+        </select>
+        <button class="chip" :disabled="selectedIndex <= 0" @click="issue = issues[selectedIndex - 1].issue">下一期 ›</button>
+      </div>
+      <div class="issues" aria-label="快速选择期号">
+        <button v-for="r in visibleIssues" :key="r.issue" class="chip" :class="{ on: issue === r.issue }" :aria-pressed="issue === r.issue" @click="issue = r.issue">{{ r.issue }}期</button>
+      </div>
+      <div class="issue-actions">
+        <button v-if="issues.length > 8" class="text-button" :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '收起期数 ↑' : '展开全部期数 ↓' }}</button>
+        <button v-if="selectedIndex > 0" class="text-button" @click="issue = issues[0].issue">回到最新一期</button>
       </div>
     </section>
 
@@ -78,6 +95,7 @@ const hit = row => row.result && (row.zodiacs.length ? row.zodiacs.includes(row.
         </tbody>
       </table>
       <div class="archive-note small muted">
+        <details><summary>采集时间说明</summary><p>北京时间 10:00、12:00、13:00 补预测，21:29 补抓；21:34 起补结果，最晚到 22:40。采集成功即停止。</p></details>
         <p>预测保存于 {{ stamp(selected.captured_at) }}（北京时间）</p>
         <p v-if="selected.result_captured_at">结果同步于 {{ stamp(selected.result_captured_at) }}</p>
         <p v-if="selected.before_result">预测在原站未公布结果时保存；开奖后仅补结果，命中情况按已保存的预测计算。</p>
@@ -91,8 +109,17 @@ const hit = row => row.result && (row.zodiacs.length ? row.zodiacs.includes(row.
 <style scoped>
 .year { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
 select { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; max-width: 100%; }
-.issues { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
-.issues button { flex: none; }
+.count { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.issue-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; margin: 16px 0 12px; }
+.issue-nav select { width: 100%; text-align: center; min-width: 0; font-weight: 600; }
+.issue-nav button { padding: 10px 8px; white-space: nowrap; }
+.issue-nav button:disabled { opacity: .35; cursor: default; }
+.issues { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
+.issues button { padding: 8px 0; }
+.issue-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.text-button { border: 0; background: none; padding: 4px 0; color: var(--series); cursor: pointer; font-size: 12px; }
+summary { cursor: pointer; }
+@media (max-width: 600px) { .issues { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .detail-head { align-items: center; }
 .date { margin: 5px 0 0; }
 .result { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }

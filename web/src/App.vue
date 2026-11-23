@@ -15,13 +15,13 @@ import Materials from './views/Materials.vue'
 
 const TABS = [
   { key: 'dash', label: '看板', comp: Dashboard },
+  { key: 'materials', label: '六肖十码', comp: Materials },
   { key: 'miss', label: '未出分析', comp: Missing },
   { key: 'trend', label: '走势图', comp: Trend },
   { key: 'bm', label: '本命生肖', comp: Benming },
   { key: 'rel', label: '连出关联', comp: Relation },
   { key: 'struct', label: '单期结构', comp: Structure },
   { key: 'bt', label: '规则回测', comp: Backtest },
-  { key: 'materials', label: '六肖十码', comp: Materials },
 ]
 
 const draws = ref(null)
