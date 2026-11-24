@@ -40,6 +40,10 @@ const visibleIssues = computed(() => {
 })
 const selected = computed(() => issues.value.find(r => r.issue === issue.value))
 const selectedDraw = computed(() => props.draws?.find(d => d.year === year.value && d.issue === issue.value))
+const displayRows = computed(() => {
+  const rows = selected.value?.rows ?? []
+  return [...rows.slice(0, 6).reverse(), ...rows.slice(6)]
+})
 const result = computed(() => selected.value?.rows[0].result)
 const stamp = value => value?.replace('T', ' ').replace(/\+08:00$/, '')
 watch(year, () => { issue.value = issues.value[0]?.issue ?? 0 })
@@ -122,7 +126,7 @@ const hit = row => row.result && (row.zodiacs.length ? row.zodiacs.includes(row.
       <table class="materials-table">
         <thead><tr><th scope="col">栏目</th><th scope="col">原站资料</th><th scope="col">对照结果</th></tr></thead>
         <tbody>
-          <tr v-for="row in selected.rows" :key="row.label">
+          <tr v-for="row in displayRows" :key="row.label">
             <th scope="row">{{ row.label }}</th>
             <td>
               <div class="tokens">
