@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { pad } from '../lib/zodiac.js'
+import DrawBalls from '../components/DrawBalls.vue'
+
+const props = defineProps({ draws: Array, drawError: String })
 
 const records = ref([])
 const loading = ref(true)
@@ -36,6 +39,7 @@ const visibleIssues = computed(() => {
   return issues.value.slice(start, start + 8)
 })
 const selected = computed(() => issues.value.find(r => r.issue === issue.value))
+const selectedDraw = computed(() => props.draws?.find(d => d.year === year.value && d.issue === issue.value))
 const result = computed(() => selected.value?.rows[0].result)
 const stamp = value => value?.replace('T', ' ').replace(/\+08:00$/, '')
 watch(year, () => { issue.value = issues.value[0]?.issue ?? 0 })
@@ -110,6 +114,11 @@ const hit = row => row.result && (row.zodiacs.length ? row.zodiacs.includes(row.
         </div>
         <div class="result"><span class="muted small">原站开奖</span><strong>{{ result ? `${result.zodiac} ${pad(result.number)}` : '待开奖' }}</strong></div>
       </div>
+      <div class="comparison-draw">
+        <p class="small muted">平码（含特码）</p>
+        <DrawBalls v-if="selectedDraw" :draw="selectedDraw" size="sm" />
+        <p v-else class="small muted" role="status">{{ drawError ? '开奖号码加载失败，请刷新重试。' : !draws ? '开奖号码加载中…' : '该期开奖号码尚未同步' }}</p>
+      </div>
       <table class="materials-table">
         <thead><tr><th scope="col">栏目</th><th scope="col">原站资料</th><th scope="col">对照结果</th></tr></thead>
         <tbody>
@@ -171,6 +180,9 @@ summary { cursor: pointer; }
 .date { margin: 5px 0 0; }
 .result { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .result strong { font-size: 22px; color: var(--accent); }
+.comparison-draw { margin: 12px 0 16px; padding: 12px; border-radius: 10px; background: var(--surface-2); }
+.comparison-draw p { margin: 0 0 8px; }
+.comparison-draw p:last-child { margin-bottom: 0; }
 .materials-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .materials-table th, .materials-table td { text-align: left; border-bottom: 1px solid var(--line); padding: 14px 8px; }
 .materials-table thead th { font-size: 12px; color: var(--muted); font-weight: 400; }

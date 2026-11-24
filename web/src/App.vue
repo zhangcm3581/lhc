@@ -91,7 +91,7 @@ onMounted(async () => {
   </nav>
 
   <main class="container main">
-    <Materials v-if="tab === 'materials'" />
+    <Materials v-if="tab === 'materials'" :draws="draws" :draw-error="error" />
     <p v-else-if="error" class="card">{{ error }}</p>
     <p v-else-if="!draws" class="card muted">加载中…</p>
     <component :is="current.comp" v-else :draws="draws" :scope="scope" :range="range" :start="start" />
