@@ -17,7 +17,7 @@ import Ledger from './views/Ledger.vue'
 const TABS = [
   { key: 'dash', label: '看板', comp: Dashboard },
   { key: 'materials', label: '六肖十码', comp: Materials },
-  { key: 'ledger', label: '输赢记录', comp: Ledger },
+  { key: 'ledger', label: '统计分', comp: Ledger },
   { key: 'miss', label: '未出分析', comp: Missing },
   { key: 'trend', label: '走势图', comp: Trend },
   { key: 'bm', label: '本命生肖', comp: Benming },
@@ -67,7 +67,7 @@ onMounted(async () => {
 <template>
   <header class="app-head">
     <div class="container">
-      <h1 v-if="tab === 'ledger'">输赢记录<span class="scope"> · 共享账本</span></h1>
+      <h1 v-if="tab === 'ledger'">统计分<span class="scope"> · 共享记录</span></h1>
       <h1 v-else-if="tab === 'materials'">六肖十码<span class="scope"> · 资料存档</span></h1>
       <h1 v-else>生肖<span class="scope">【{{ scope }}】</span>走势分析</h1>
       <div v-if="latest && !['materials', 'ledger'].includes(tab)" class="meta">最新 第{{ latest.issue }}期 · {{ latest.date }} · 共 {{ draws.length }} 期</div>

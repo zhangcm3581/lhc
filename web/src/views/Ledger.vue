@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import DatePicker from '../components/DatePicker.vue'
-import { amountInCents, beijingToday, issueForDate, totals } from '../lib/ledger.js'
+import { scoreToUnits, beijingToday, issueForDate, totals } from '../lib/ledger.js'
 
 let authEpoch = 0
 const unlocked = ref(false)
@@ -25,18 +25,18 @@ const formError = ref('')
 const saving = ref(false)
 const filtered = computed(() => records.value.filter(r => all.value || r.date.startsWith(month.value)))
 const summary = computed(() => totals(filtered.value))
-const money = cents => (Math.abs(cents) / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const signed = cents => `${cents > 0 ? '+' : cents < 0 ? '−' : ''}¥${money(cents)}`
+const points = cents => (Math.abs(cents) / 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+const signed = cents => `${cents > 0 ? '+' : cents < 0 ? '−' : ''}${points(cents)} 分`
 watch(day, value => { if (!editing.value) issue.value = issueForDate(value) })
 watch(month, () => { all.value = false })
 
 async function api(path, method = 'GET', body) {
   const res = await fetch(`/api/ledger/${path}`, { method, credentials: 'same-origin', cache: 'no-store', ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) })
   let data
-  try { data = await res.json() } catch { throw new Error('账本服务暂未就绪，请稍后重试') }
+  try { data = await res.json() } catch { throw new Error('记录服务暂未就绪，请稍后重试') }
   if (!res.ok) {
     if (res.status === 401 && path !== 'login') { unlocked.value = false; records.value = []; editor.value?.close() }
-    throw new Error(data.error || '请求失败，请稍后重试')
+    throw Object.assign(new Error(data.error || '请求失败，请稍后重试'), { status: res.status })
   }
   return data
 }
@@ -53,7 +53,7 @@ async function refresh(initial = false) {
     synced.value = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit' }).format(new Date())
   } catch (e) {
     if (!initial) error.value = e.message
-    else if (e.message !== '请输入验证码进入账本') error.value = e.message
+    else if (e.status !== 401) error.value = e.message
   } finally { refreshing.value = false; checking.value = false }
 }
 async function login() {
@@ -89,7 +89,7 @@ async function save() {
     const year = Number(day.value.slice(0, 4))
     if (!Number.isInteger(issueNumber) || issueNumber < 1 || issueNumber > issueForDate(`${year}-12-31`)) throw new Error('请输入有效期数')
     if (records.value.some(r => r.year === year && r.issue === issueNumber && r.id !== editing.value?.id)) throw new Error(`${year} 年第 ${issueNumber} 期已有记录，请编辑已有记录。`)
-    const body = { date: day.value, issue: issueNumber, amount_cents: amountInCents(amount.value.trim(), direction.value), ...(editing.value ? { revision: editing.value.revision } : {}) }
+    const body = { date: day.value, issue: issueNumber, amount_cents: scoreToUnits(amount.value.trim(), direction.value), ...(editing.value ? { revision: editing.value.revision } : {}) }
     saving.value = true
     const result = await api(editing.value ? `records/${editing.value.id}` : 'records', editing.value ? 'PUT' : 'POST', body)
     records.value = [result.record, ...records.value.filter(r => r.id !== result.record.id)].sort((a, b) => b.date.localeCompare(a.date) || b.issue - a.issue)
@@ -116,40 +116,40 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <p v-if="checking" class="card muted" role="status">正在连接共享账本…</p>
+  <p v-if="checking" class="card muted" role="status">正在连接共享记录…</p>
   <section v-else-if="!unlocked" class="card unlock">
     <div class="lock-symbol" aria-hidden="true"><svg width="30" height="34" viewBox="0 0 30 34" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="14" width="24" height="17" rx="4"/><path d="M8 14V9a7 7 0 0 1 14 0v5M15 21v4"/></svg></div>
     <h2>输入访问验证码</h2>
-    <p class="muted">输入验证码，查看同一份共享账本</p>
+    <p class="muted">输入验证码，查看同一份共享记录</p>
     <form @submit.prevent="login">
       <label class="sr-only" for="ledger-pin">6 位数字验证码</label>
       <input id="ledger-pin" v-model="pin" class="pin" type="password" inputmode="numeric" autocomplete="current-password" pattern="[0-9]{6}" maxlength="6" placeholder="••••••" required :disabled="busy" aria-describedby="login-error" />
       <p v-if="error" id="login-error" class="error" role="alert">{{ error }}</p>
-      <button class="primary" :disabled="busy || !/^[0-9]{6}$/.test(pin)">{{ busy ? '正在验证…' : '进入账本' }}</button>
+      <button class="primary" :disabled="busy || !/^[0-9]{6}$/.test(pin)">{{ busy ? '正在验证…' : '进入统计分' }}</button>
     </form>
   </section>
   <template v-else>
-    <div class="ledger-toolbar"><span class="small muted">共享账本 · {{ refreshing ? '同步中…' : `${synced} 已同步` }}</span><div><button class="text-button" :disabled="refreshing" @click="refresh()">刷新</button><button class="text-button" :disabled="busy" @click="logout">退出</button></div></div>
+    <div class="ledger-toolbar"><span class="small muted">共享记录 · {{ refreshing ? '同步中…' : `${synced} 已同步` }}</span><div><button class="text-button" :disabled="refreshing" @click="refresh()">刷新</button><button class="text-button" :disabled="busy" @click="logout">退出</button></div></div>
     <p v-if="error" class="error card" role="alert">{{ error }}</p>
     <p v-if="notice" class="success small" role="status">{{ notice }}</p>
     <section class="card">
       <div class="filters"><div class="scope-toggle"><button :class="{ active: !all }" @click="all = false">按月</button><button :class="{ active: all }" @click="all = true">全部</button></div><DatePicker v-model="month" mode="month" label="统计年月" /></div>
-      <div class="summary" :class="{ negative: summary.net < 0 }"><div class="small muted">{{ all ? '全部记录' : `${month.replace('-', ' 年 ')} 月` }} · 净盈亏</div><strong class="net digits">{{ signed(summary.net) }}</strong><div class="summary-parts"><div><span>累计赢</span><strong class="win digits">¥{{ money(summary.win) }}</strong></div><div><span>累计输</span><strong class="loss digits">¥{{ money(summary.loss) }}</strong></div></div></div>
+      <div class="summary" :class="{ negative: summary.net < 0 }"><div class="small muted">{{ all ? '全部记录' : `${month.replace('-', ' 年 ')} 月` }} · 净得分</div><strong class="net digits">{{ signed(summary.net) }}</strong><div class="summary-parts"><div><span>累计加分</span><strong class="win digits">{{ points(summary.win) }} 分</strong></div><div><span>累计扣分</span><strong class="loss digits">{{ points(summary.loss) }} 分</strong></div></div></div>
     </section>
-    <div class="list-title"><h2 class="card-title">输赢明细 <span class="small muted">共 {{ filtered.length }} 条</span></h2><button class="primary add" @click="openEditor()">＋ 记一笔</button></div>
+    <div class="list-title"><h2 class="card-title">分数明细 <span class="small muted">共 {{ filtered.length }} 条</span></h2><button class="primary add" @click="openEditor()">＋ 记一笔</button></div>
     <section class="card entries">
-      <div v-if="!filtered.length" class="empty"><p>这个{{ all ? '账本' : '月份' }}还没有记录</p><span class="small muted">点击「记一笔」，输入日期、期数和输赢金额</span></div>
-      <div v-for="r in filtered" :key="r.id" class="entry"><div><strong>第 {{ r.issue }} 期</strong><div class="small muted">{{ r.date }}</div></div><strong class="entry-amount digits" :class="r.amount_cents > 0 ? 'win' : 'loss'">{{ signed(r.amount_cents) }}</strong><span class="outcome" :class="r.amount_cents > 0 ? 'win' : 'loss'">{{ r.amount_cents > 0 ? '赢' : '输' }}</span><button class="edit" :aria-label="`编辑 ${r.year} 年第 ${r.issue} 期`" @click="openEditor(r)">编辑</button></div>
+      <div v-if="!filtered.length" class="empty"><p>这个{{ all ? '记录列表' : '月份' }}还没有记录</p><span class="small muted">点击「记一笔」，输入日期、期数和加减分数</span></div>
+      <div v-for="r in filtered" :key="r.id" class="entry"><div><strong>第 {{ r.issue }} 期</strong><div class="small muted">{{ r.date }}</div></div><strong class="entry-amount digits" :class="r.amount_cents > 0 ? 'win' : 'loss'">{{ signed(r.amount_cents) }}</strong><span class="outcome" :class="r.amount_cents > 0 ? 'win' : 'loss'">{{ r.amount_cents > 0 ? '加分' : '扣分' }}</span><button class="edit" :aria-label="`编辑 ${r.year} 年第 ${r.issue} 期`" @click="openEditor(r)">编辑</button></div>
     </section>
   </template>
   <dialog ref="editor" class="editor" aria-labelledby="ledger-editor-title" @cancel="saving && $event.preventDefault()" @click="$event.target === editor && closeEditor()">
-    <div class="editor-head"><h2 id="ledger-editor-title">{{ editing ? '编辑记录' : '记录输赢' }}</h2><button class="close" aria-label="关闭记录编辑" :disabled="saving" @click="closeEditor">×</button></div>
+    <div class="editor-head"><h2 id="ledger-editor-title">{{ editing ? '编辑记录' : '记录分数' }}</h2><button class="close" aria-label="关闭记录编辑" :disabled="saving" @click="closeEditor">×</button></div>
     <form @submit.prevent="save">
       <fieldset :disabled="saving">
         <div class="form-field"><span class="field-label">日期</span><DatePicker v-model="day" label="记录日期" /></div>
         <label class="form-field" for="ledger-issue"><span>期数</span><input id="ledger-issue" v-model="issue" inputmode="numeric" pattern="[0-9]{1,3}" required /><small class="muted">同一年同一期只能保存一条记录</small></label>
-        <div class="direction" role="group" aria-label="输赢"><button type="button" :class="{ chosen: direction === 'win', win: true }" :aria-pressed="direction === 'win'" @click="direction = 'win'">赢</button><button type="button" :class="{ chosen: direction === 'loss', loss: true }" :aria-pressed="direction === 'loss'" @click="direction = 'loss'">输</button></div>
-        <label class="form-field" for="ledger-amount"><span>金额（元）</span><input id="ledger-amount" v-model="amount" class="amount digits" inputmode="decimal" placeholder="0.00" required /><small class="muted">选择输赢后，输入金额即可</small></label>
+        <div class="direction" role="group" aria-label="加分或扣分"><button type="button" :class="{ chosen: direction === 'win', win: true }" :aria-pressed="direction === 'win'" @click="direction = 'win'">加分</button><button type="button" :class="{ chosen: direction === 'loss', loss: true }" :aria-pressed="direction === 'loss'" @click="direction = 'loss'">扣分</button></div>
+        <label class="form-field" for="ledger-amount"><span>分数（分）</span><input id="ledger-amount" v-model="amount" class="amount digits" inputmode="decimal" placeholder="0.00" required /><small class="muted">选择加分或扣分后，输入分数即可</small></label>
         <p v-if="formError" class="error" role="alert">{{ formError }}</p>
         <button class="primary" :disabled="saving">{{ saving ? '正在保存…' : '保存记录' }}</button>
       </fieldset>

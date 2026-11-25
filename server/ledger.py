@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""共享输赢账本：仅监听本机，由 nginx 代理；SQLite 数据保存在静态目录外。"""
+"""共享积分记录：仅监听本机，由 nginx 代理；SQLite 数据保存在静态目录外。"""
 import argparse
 from collections import defaultdict, deque
 from contextlib import closing, contextmanager
@@ -62,7 +62,7 @@ def validate_record(body):
         raise ValueError(f'期数须为 1～{limit} 的整数')
     amount = body.get('amount_cents')
     if type(amount) is not int or not 0 < abs(amount) <= 100_000_000:
-        raise ValueError('金额须大于 0 且不超过 1,000,000 元，最多两位小数')
+        raise ValueError('分数须大于 0 且不超过 1,000,000 分，最多两位小数')
     return day.isoformat(), day.year, issue, amount
 
 
@@ -149,7 +149,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError) as exc:
             self.respond(400, {'error': str(exc)})
         except sqlite3.Error:
-            self.respond(503, {'error': '账本暂时不可用，请稍后重试'})
+            self.respond(503, {'error': '记录暂时不可用，请稍后重试'})
 
     def handle_request(self):
         path = urlsplit(self.path).path
@@ -163,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
             self.login(body)
             return
         if not self.authenticated():
-            self.respond(401, {'error': '请输入验证码进入账本'})
+            self.respond(401, {'error': '请输入验证码进入统计分'})
             return
         if path == '/api/ledger/logout' and self.command == 'POST':
             with self.server.lock:
@@ -221,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError('记录版本不正确，请刷新后重试')
                     cursor = db.execute('UPDATE records SET date=?, year=?, issue=?, amount_cents=?, revision=revision+1 WHERE id=? AND revision=?', (*values, record_id, revision))
                     if cursor.rowcount == 0:
-                        self.respond(409, {'error': '记录已被其他设备修改，请刷新账本后重新编辑'})
+                        self.respond(409, {'error': '记录已被其他设备修改，请刷新记录后重新编辑'})
                         return
                 record = dict(db.execute('SELECT * FROM records WHERE id=?', (record_id,)).fetchone())
         except sqlite3.IntegrityError:
