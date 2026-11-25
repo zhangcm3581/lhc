@@ -86,6 +86,57 @@ chmod -R a+rX $APP/web/dist $DATA # nginx 以 www-data 身份运行，需要能�
 chmod a+x $APP $APP/web          # 允许进入仓库目录找到 web/dist
 echo "完成"
 
+# 账本不放在 nginx 的 /data/ 映射目录内，避免验证码或数据库被直接下载。
+PRIVATE=/opt/lhc-private
+install -d -m 700 -o "$RUN_USER" "$PRIVATE"
+if [[ ! -f $PRIVATE/pin.json ]]; then
+  LEDGER_PIN="${LHC_LEDGER_PIN:-}"
+  if [[ -z $LEDGER_PIN && -t 0 ]]; then
+    read -r -s -p "首次部署，请设置账本的 6 位数字验证码：" LEDGER_PIN
+    echo
+  fi
+  [[ $LEDGER_PIN =~ ^[0-9]{6}$ ]] || fail "首次部署需提供 6 位验证码，可使用 sudo LHC_LEDGER_PIN=六位数字 bash deploy/setup-server.sh"
+  printf '%s' "$LEDGER_PIN" | sudo -u "$RUN_USER" python3 "$APP/server/ledger.py" --storage "$PRIVATE" --init-pin
+  unset LEDGER_PIN
+else
+  sudo -u "$RUN_USER" python3 "$APP/server/ledger.py" --storage "$PRIVATE" --init-pin </dev/null
+fi
+cat > /etc/systemd/system/lhc-ledger.service <<EOF
+[Unit]
+Description=LHC shared win-loss ledger
+After=network.target
+
+[Service]
+Type=simple
+User=$RUN_USER
+WorkingDirectory=$APP
+ExecStart=/usr/bin/python3 $APP/server/ledger.py --storage $PRIVATE --port 8765
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$PRIVATE
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable lhc-ledger >/dev/null
+systemctl restart lhc-ledger
+# 401 表示接口已启动，且未登录不能读取账本。
+ledger_ready=false
+for attempt in 1 2 3 4 5; do
+  if [[ $(curl --max-time 2 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/ledger/records || true) == 401 ]] && systemctl is-active --quiet lhc-ledger; then
+    ledger_ready=true
+    break
+  fi
+  sleep 1
+done
+$ledger_ready || fail "账本服务启动失败，请查看 sudo journalctl -u lhc-ledger -n 30"
+
 step "5/7 配置网站（新增 $SITE，不改动其他站点）"
 backup=""
 [[ -f $SITE ]] && backup=$(cat $SITE)

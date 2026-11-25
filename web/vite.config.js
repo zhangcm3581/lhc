@@ -28,6 +28,6 @@ function serveData() {
 export default defineConfig({
   base: './',
   plugins: [vue(), serveData()],
-  server: { host: true },
-  preview: { host: true },
+  server: { host: true, proxy: { '/api/ledger': { target: 'http://127.0.0.1:8765', changeOrigin: false } } },
+  preview: { host: true, proxy: { '/api/ledger': { target: 'http://127.0.0.1:8765', changeOrigin: false } } },
 })

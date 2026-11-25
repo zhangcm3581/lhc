@@ -149,3 +149,53 @@ cd /opt/lhc && sudo bash deploy/setup-server.sh            # 要开微信推送�
     - 55128 缺 2020 年 07-04（第177期）、07-24 两期，并把 07-25 标成了第197期（原网站是第198期）。
     - 号码不同：2020 第186、197、284 期，2021 第021 期。
     - 抓取时发现网站和已有数据的号码不同，只记日志，不会覆盖已有数据。
+
+## 共享输赢账本
+
+入口：导航「输赢记录」，或 `#ledger`。只记录日期、期数、输赢和金额，不记录下注项目、下注额或返还额。
+
+- 有同一个验证码的人可以在不同设备查看、添加和编辑同一份账本。页面每 30 秒及重新回到窗口时同步，也支持手动刷新。
+- 同一年同一期仅允许一条记录；前端提示重复，数据库 `UNIQUE(year, issue)` 同时拦截跨设备并发重复。编辑采用版本校验，其他设备已修改时会提示刷新，不静默覆盖。
+- 金额以整数分保存；统计按记录日期筛选月份，显示累计赢、累计输和净盈亏。输入日期自动给出默认期数，可手动修改。日期、年份和月份全部使用自定义日历面板。
+- 验证码由服务器验证；会话保存在 HttpOnly、SameSite Cookie 中，有效期 12 小时，退出后立即失效。服务重启需要重新登录。单个 IP 在 5 分钟内最多尝试 5 次登录。
+- 数据库：`/opt/lhc-private/ledger.sqlite3`；验证码加盐哈希：`/opt/lhc-private/pin.json`。此目录不在 nginx 的公开 `/data/` 路径内，代码更新不会删除记录。
+- Python 标准库服务监听 `127.0.0.1:8765`，nginx 将 `/api/ledger/` 转发给它；不需要新增对外端口或安装数据库服务。
+
+**服务器更新**：
+
+```bash
+cd /opt/lhc
+git pull --ff-only origin main
+sudo bash deploy/setup-server.sh
+sudo systemctl status lhc-ledger --no-pager
+```
+
+首次安装会提示输入 6 位数字验证码（输入不回显）；也可在首次部署时设置 `sudo LHC_LEDGER_PIN=你的六位数字 bash deploy/setup-server.sh`。后续运行部署脚本保留已有验证码和账本。现有 IP 地址使用 HTTP，验证码和记录的网络传输并未加密；配置 HTTPS 后会话 Cookie 会自动使用 Secure 属性。
+
+**本地开发**（使用独立临时数据，不连接生产账本）：
+
+```bash
+mkdir -p /tmp/lhc-ledger-dev
+printf '%s' '123456' | python3 server/ledger.py --storage /tmp/lhc-ledger-dev --init-pin
+python3 server/ledger.py --storage /tmp/lhc-ledger-dev
+# 另一个终端：
+cd web && npm run dev
+```
+
+**测试**：`python3 -m unittest discover -s server -p 'test_*.py'`；前端金额和统计测试包含在 `cd web && npm test` 中。
+
+**备份**：在服务器用 Python SQLite 在线备份（无需停止服务）：
+
+```bash
+sudo python3 - <<'PY'
+import sqlite3
+from datetime import datetime
+source = sqlite3.connect('/opt/lhc-private/ledger.sqlite3')
+backup = sqlite3.connect('/opt/lhc-private/ledger-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '.sqlite3')
+source.backup(backup)
+backup.close()
+source.close()
+PY
+```
+
+日志：`sudo journalctl -u lhc-ledger -n 50 --no-pager`。

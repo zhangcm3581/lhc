@@ -12,10 +12,12 @@ import Relation from './views/Relation.vue'
 import Structure from './views/Structure.vue'
 import Backtest from './views/Backtest.vue'
 import Materials from './views/Materials.vue'
+import Ledger from './views/Ledger.vue'
 
 const TABS = [
   { key: 'dash', label: '看板', comp: Dashboard },
   { key: 'materials', label: '六肖十码', comp: Materials },
+  { key: 'ledger', label: '输赢记录', comp: Ledger },
   { key: 'miss', label: '未出分析', comp: Missing },
   { key: 'trend', label: '走势图', comp: Trend },
   { key: 'bm', label: '本命生肖', comp: Benming },
@@ -65,10 +67,11 @@ onMounted(async () => {
 <template>
   <header class="app-head">
     <div class="container">
-      <h1 v-if="tab === 'materials'">六肖十码<span class="scope"> · 资料存档</span></h1>
+      <h1 v-if="tab === 'ledger'">输赢记录<span class="scope"> · 共享账本</span></h1>
+      <h1 v-else-if="tab === 'materials'">六肖十码<span class="scope"> · 资料存档</span></h1>
       <h1 v-else>生肖<span class="scope">【{{ scope }}】</span>走势分析</h1>
-      <div v-if="latest && tab !== 'materials'" class="meta">最新 第{{ latest.issue }}期 · {{ latest.date }} · 共 {{ draws.length }} 期</div>
-      <div v-if="tab !== 'materials'" class="filters">
+      <div v-if="latest && !['materials', 'ledger'].includes(tab)" class="meta">最新 第{{ latest.issue }}期 · {{ latest.date }} · 共 {{ draws.length }} 期</div>
+      <div v-if="!['materials', 'ledger'].includes(tab)" class="filters">
         <Seg v-if="SHOW_SPECIAL" v-model="scope" :options="[{ value: '特码', label: '特码' }, { value: '平码', label: '平码' }]" block />
         <Seg
           v-model="range"
@@ -91,7 +94,8 @@ onMounted(async () => {
   </nav>
 
   <main class="container main">
-    <Materials v-if="tab === 'materials'" :draws="draws" :draw-error="error" />
+    <Ledger v-if="tab === 'ledger'" />
+    <Materials v-else-if="tab === 'materials'" :draws="draws" :draw-error="error" />
     <p v-else-if="error" class="card">{{ error }}</p>
     <p v-else-if="!draws" class="card muted">加载中…</p>
     <component :is="current.comp" v-else :draws="draws" :scope="scope" :range="range" :start="start" />
