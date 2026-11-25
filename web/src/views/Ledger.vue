@@ -164,7 +164,8 @@ button { cursor: pointer; } button:disabled { cursor: default; opacity: .5; }
 .unlock { max-width: 420px; margin: 40px auto; padding: 32px 24px; text-align: center; }
 .unlock h2 { font-size: 22px; }.unlock p { font-size: 13px; }
 .lock-symbol { width: 56px; height: 56px; margin: 0 auto 20px; background: var(--accent-soft); border-radius: 16px; color: var(--accent); font-size: 42px; display: flex; align-items: center; justify-content: center; }
-input { width: 100%; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; padding: 12px; font: inherit; }
+/* 手机浏览器聚焦小于 16px 的输入框时会自动放大页面。 */
+input { width: 100%; min-width: 0; max-width: 100%; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 9px; padding: 12px; font: inherit; font-size: 16px; }
 input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pin { text-align: center; font-size: 30px; letter-spacing: 12px; margin: 20px 0; padding-left: 24px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -182,9 +183,9 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .win, .success { color: var(--good); }.loss, .error { color: var(--hot); }.error { font-size: 13px; }
 .add { width: auto; min-height: 40px; font-size: 14px; }.list-title { margin-top: 20px; }
 .entries { padding-top: 0; padding-bottom: 0; }.entry { display: flex; align-items: center; gap: 10px; padding: 17px 0; border-bottom: 1px solid var(--line); }.entry:last-child { border-bottom: 0; }.entry > div { flex-shrink: 0; }.entry-amount { margin-left: auto; font-size: 20px; overflow-wrap: anywhere; min-width: 0; }.outcome { font-size: 12px; }.edit { border: 0; background: var(--surface-2); border-radius: 6px; padding: 8px; font-size: 12px; white-space: nowrap; }.empty { text-align: center; padding: 32px 8px; color: var(--ink-2); }
-.editor { width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); box-shadow: 0 20px 70px #0003; }.editor::backdrop { background: #0005; }
+.editor { width: 420px; max-width: calc(100% - 24px); box-sizing: border-box; max-height: calc(100dvh - 32px); overflow-y: auto; overflow-x: hidden; padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink); box-shadow: 0 20px 70px #0003; }.editor::backdrop { background: #0005; }
 .editor-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }.editor-head h2 { font-size: 20px; }.close { width: 32px; height: 32px; border: 0; border-radius: 50%; font-size: 24px; background: var(--surface-2); }
-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }.form-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }.form-field > span { font-weight: 600; }.form-field small { font-size: 12px; }.amount { font-size: 28px; font-weight: 600; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }.form-field { min-width: 0; display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }.form-field > span { font-weight: 600; }.form-field small { font-size: 12px; }.amount { font-size: 28px; font-weight: 600; }
 .direction { display: flex; gap: 10px; margin: 8px 0 20px; }.direction button { flex: 1; border: 1px solid var(--line); background: var(--surface-2); border-radius: 10px; padding: 10px; font-weight: 600; font-size: 22px; }.direction button.chosen { border-color: currentColor; box-shadow: inset 0 0 0 1px currentColor; }.save-help { text-align: center; margin: 12px 0 0; }
 @media (max-width: 400px) { .entry { gap: 6px; }.entry-amount { font-size: 17px; }.editor { padding: 18px; }.filters { gap: 8px; }.scope-toggle button { padding: 7px 9px; } }
 </style>
